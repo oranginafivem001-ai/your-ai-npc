@@ -36,7 +36,7 @@ def process_audio():
             return jsonify({"player_text": "Ошибка: пустой запрос"}), 400
 
         audio_data = data.get("audioData")
-        if not audio_
+        if not audio_data:
             return jsonify({"player_text": "Ошибка: нет аудио"}), 400
 
         print(f"📥 Получено {len(audio_data)} байт")
