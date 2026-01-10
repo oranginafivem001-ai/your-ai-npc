@@ -31,10 +31,10 @@ def process_audio():
         data = request.get_json()
         audio_data = data.get("audioData")
         
-        if not audio_
+        if not audio_data:
             return jsonify({"player_text": "Ошибка: нет аудио"}), 400
 
-        print(f"📥 Получено {len(audio_data)} байт")  # ← для отладки
+        print(f"📥 Получено {len(audio_data)} байт")
 
         audio_bytes = bytes(audio_data)
         wav_buffer = audio_bytes_to_wav_buffer(audio_bytes)
