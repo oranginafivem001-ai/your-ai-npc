@@ -7,7 +7,7 @@ import os
 
 app = Flask(__name__)
 
-# Загрузка модели
+# Загрузка модели Vosk
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
     raise RuntimeError("Модель Vosk не найдена!")
@@ -30,14 +30,16 @@ def process_audio():
     try:
         data = request.get_json()
         audio_data = data.get("audioData")
-
-        if not audio_data:
+        
+        if not audio_
             return jsonify({"player_text": "Ошибка: нет аудио"}), 400
+
+        print(f"📥 Получено {len(audio_data)} байт")  # ← для отладки
 
         audio_bytes = bytes(audio_data)
         wav_buffer = audio_bytes_to_wav_buffer(audio_bytes)
 
-        # Распознавание
+        # Распознавание через Vosk
         rec = KaldiRecognizer(vosk_model, SAMPLE_RATE)
         text = ""
         while True:
@@ -52,7 +54,7 @@ def process_audio():
         if not text:
             text = "Не расслышал"
 
-        print(f"✅ Распознано: '{text}'")  # будет в логах Render
+        print(f"✅ Распознано: '{text}'")
         return jsonify({"player_text": text})
 
     except Exception as e:
@@ -60,4 +62,5 @@ def process_audio():
         return jsonify({"player_text": "Ошибка распознавания"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
