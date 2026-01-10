@@ -18,7 +18,7 @@ SAMPLE_RATE = 16000
 
 # === Groq клиент ===
 groq_client = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),  # задайте в Render Environment Variables
+    api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
 )
 
