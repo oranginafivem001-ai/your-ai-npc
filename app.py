@@ -1,81 +1,74 @@
 from flask import Flask, request, jsonify
+import os
 import wave
-import io
 import json
 from vosk import Model, KaldiRecognizer
-import os
 
 app = Flask(__name__)
 
-# Загрузка модели Vosk
+# Загружаем модель один раз при старте
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
-    raise RuntimeError("Vosk model not found in ./model/")
+    raise Exception(f"Model path {MODEL_PATH} does not exist")
 
-vosk_model = Model(MODEL_PATH)
-SAMPLE_RATE = 16000
+model = Model(MODEL_PATH)
+print("✅ Vosk model loaded successfully.")
 
-def bytes_to_wav_buffer(audio_bytes):
-    """Преобразует байты в WAV-буфер (16kHz, mono, 16-bit)"""
-    buffer = io.BytesIO()
-    with wave.open(buffer, 'wb') as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(SAMPLE_RATE)
-        wf.writeframes(audio_bytes)
-    buffer.seek(0)
-    return buffer
-
-@app.route('/process', methods=['POST'])
-def process_audio():
-    print("=== [PYTHON DEBUG] НОВЫЙ ЗАПРОС ПОЛУЧЕН ===")
-    print(f"Headers: {dict(request.headers)}")
-    print(f"Content-Type: {request.content_type}")
-
+@app.route('/stt', methods=['POST'])
+def stt():
     try:
-        data = request.get_json()
-        print(f"JSON получен: {type(data)}")
+        # Проверяем, есть ли файл или raw audio data
+        if 'audio' in request.files:
+            audio_file = request.files['audio']
+            audio_path = "/tmp/audio.wav"
+            audio_file.save(audio_path)
+        elif 'audioData' in request.json:
+            # Если приходит массив байтов (как в твоём скрипте)
+            audio_data = bytes(request.json['audioData'])
+            audio_path = "/tmp/audio.wav"
+            with open(audio_path, 'wb') as f:
+                f.write(audio_data)
+        else:
+            return jsonify({"error": "No audio data provided"}), 400
 
-        if not 
-            print("❌ ОШИБКА: запрос пустой")
-            return jsonify({"player_text": "Ошибка: пустой запрос"}), 400
+        # Открываем WAV
+        wf = wave.open(audio_path, "rb")
+        if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 16000:
+            return jsonify({"error": "Audio must be 16kHz, mono, 16-bit PCM"}), 400
 
-        audio_data = data.get("audioData")
-        print(f"AudioData длина: {len(audio_data) if audio_data else 'None'}")
+        # Распознавание
+        rec = KaldiRecognizer(model, wf.getframerate())
+        rec.SetWords(True)
 
-        if not audio_
-            print("❌ ОШИБКА: нет аудио")
-            return jsonify({"player_text": "Ошибка: нет аудио"}), 400
-
-        print(f"📥 Получено {len(audio_data)} байт аудио")
-
-        # Преобразуем в байты и в WAV
-        audio_bytes = bytes(audio_data)
-        wav_buffer = bytes_to_wav_buffer(audio_bytes)
-
-        # Распознавание через Vosk
-        rec = KaldiRecognizer(vosk_model, SAMPLE_RATE)
-        text = ""
+        result = ""
         while True:
-            chunk = wav_buffer.read(4000)
-            if not chunk:
+            data = wf.readframes(4000)
+            if len(data) == 0:
                 break
-            if rec.AcceptWaveform(chunk):
-                result = json.loads(rec.Result())
-                text += result.get("text", "") + " "
+            if rec.AcceptWaveform(data):
+                res = json.loads(rec.Result())
+                result += res.get("text", "") + " "
 
-        text = text.strip()
-        if not text:
-            text = "Не расслышал"
+        final_result = rec.FinalResult()
+        final_text = json.loads(final_result).get("text", "").strip()
 
-        print(f"✅ Распознано: '{text}'")
-        return jsonify({"player_text": text})
+        # Очищаем временный файл
+        os.remove(audio_path)
+
+        return jsonify({
+            "text": final_text,
+            "success": True
+        })
 
     except Exception as e:
-        print(f"❌ Ошибка обработки: {str(e)}")
-        return jsonify({"player_text": "Ошибка распознавания"}), 500
+        return jsonify({
+            "error": str(e),
+            "success": False
+        }), 500
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok", "model": "vosk-small-ru-0.22"})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    print(f"=== [PYTHON DEBUG] Запуск сервера на порту {port} ===")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=10000)
