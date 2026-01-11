@@ -45,13 +45,12 @@ async def websocket_stt(websocket: WebSocket):
     except Exception:
         # Любое отключение (включая быстрое) — просто выходим
         pass
-    finally:
-        # Обязательно вызываем FinalResult — даже если речь была короткой
-        final = rec.FinalResult()
-        final_text = eval(final).get("text", "")
-            print(">>> FINAL RESULT:", repr(final_text))  # ← ДОБАВЬ ЭТО
-        if final_text.strip():
-            try:
-                await websocket.send_json({"type": "final", "text": final_text})
-            except:
-                pass  # игнорируем, если соединение уже закрыто
+finally:
+    final = rec.FinalResult()
+    final_text = eval(final).get("text", "")
+    print(">>> FINAL RESULT:", repr(final_text))  # ← ПРАВИЛЬНЫЙ ОТСТУП
+    if final_text.strip():
+        try:
+            await websocket.send_json({"type": "final", "text": final_text})
+        except:
+            pass  # игнорируем, если соединение уже закрыто
