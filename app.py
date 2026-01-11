@@ -7,12 +7,11 @@ import os
 
 app = Flask(__name__)
 
-# Путь к модели Vosk
+# Загрузка модели
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
     raise RuntimeError("Vosk model not found in ./model/")
 
-# Загрузка модели (русская, small)
 vosk_model = Model(MODEL_PATH)
 SAMPLE_RATE = 16000
 
@@ -29,17 +28,26 @@ def bytes_to_wav_buffer(audio_bytes):
 
 @app.route('/process', methods=['POST'])
 def process_audio():
+    print("=== [PYTHON DEBUG] НОВЫЙ ЗАПРОС ПОЛУЧЕН ===")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Content-Type: {request.content_type}")
+
     try:
-        # Получаем JSON
         data = request.get_json()
+        print(f"JSON получен: {type(data)}")
+
         if not 
+            print("❌ ОШИБКА: запрос пустой")
             return jsonify({"player_text": "Ошибка: пустой запрос"}), 400
 
         audio_data = data.get("audioData")
-        if not audio_
+        print(f"AudioData длина: {len(audio_data) if audio_data else 'None'}")
+
+        if not audio_data:
+            print("❌ ОШИБКА: нет аудио")
             return jsonify({"player_text": "Ошибка: нет аудио"}), 400
 
-        print(f"📥 Получено {len(audio_data)} байт")
+        print(f"📥 Получено {len(audio_data)} байт аудио")
 
         # Преобразуем в байты и в WAV
         audio_bytes = bytes(audio_data)
@@ -69,4 +77,5 @@ def process_audio():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    print(f"=== [PYTHON DEBUG] Запуск сервера на порту {port} ===")
+    app.run(host='0.0.0.0', port=port, debug=False)
