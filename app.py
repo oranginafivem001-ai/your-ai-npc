@@ -7,11 +7,12 @@ import os
 
 app = Flask(__name__)
 
-# Загрузка модели
+# Загрузка модели Vosk
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
     raise RuntimeError("Vosk model not found in ./model/")
 
+# Загрузка модели (русская, small)
 vosk_model = Model(MODEL_PATH)
 SAMPLE_RATE = 16000
 
@@ -33,6 +34,7 @@ def process_audio():
     print(f"Content-Type: {request.content_type}")
 
     try:
+        # Получаем JSON
         data = request.get_json()
         print(f"JSON получен: {type(data)}")
 
@@ -43,7 +45,7 @@ def process_audio():
         audio_data = data.get("audioData")
         print(f"AudioData длина: {len(audio_data) if audio_data else 'None'}")
 
-        if not audio_data:
+        if not audio_
             print("❌ ОШИБКА: нет аудио")
             return jsonify({"player_text": "Ошибка: нет аудио"}), 400
 
