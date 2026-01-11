@@ -5,7 +5,7 @@ from vosk import Model, KaldiRecognizer
 
 app = FastAPI()
 
-# Загрузка модели Vosk
+# Загрузка модели Vosk (один раз при старте)
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
     raise RuntimeError(f"Model directory not found at {MODEL_PATH}")
@@ -21,38 +21,36 @@ async def health():
 async def websocket_stt(websocket: WebSocket):
     await websocket.accept()
     
-    session_id = str(uuid.uuid4())
     rec = KaldiRecognizer(model, 16000)
     rec.SetWords(True)
     
     try:
-        # Опционально: отправить session_id
-        await websocket.send_json({"type": "session", "session_id": session_id})
-        
         while True:
             data = await websocket.receive_bytes()
             
+            # Основная логика Vosk: обрабатываем чанк
             if rec.AcceptWaveform(data):
+                # Фраза завершена → полный результат
                 result = rec.Result()
                 text = eval(result).get("text", "")
-                if text:
+                if text.strip():
                     await websocket.send_json({"type": "partial", "text": text})
             else:
+                # Фраза ещё идёт → промежуточный результат
                 partial = rec.PartialResult()
                 partial_text = eval(partial).get("partial", "")
-                if partial_text:
+                if partial_text.strip():
                     await websocket.send_json({"type": "partial", "text": partial_text})
                     
-    except Exception as e:
-        # При любом разрыве (включая быстрый) — просто завершаем
+    except Exception:
+        # Любое отключение (включая быстрое) — просто выходим
         pass
     finally:
-        # Финальный результат — только если есть текст
+        # Обязательно вызываем FinalResult — даже если речь была короткой
         final = rec.FinalResult()
         final_text = eval(final).get("text", "")
-        if final_text:
+        if final_text.strip():
             try:
                 await websocket.send_json({"type": "final", "text": final_text})
             except:
                 pass  # игнорируем, если соединение уже закрыто
-        # НЕ вызываем websocket.close() — он уже закрыт клиентом
