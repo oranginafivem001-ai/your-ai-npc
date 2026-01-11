@@ -6,15 +6,15 @@ from vosk import Model, KaldiRecognizer
 
 app = FastAPI()
 
-# Загружаем модель один раз
+# Загружаем модель один раз при старте
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
-    raise RuntimeError(f"Model not found at {MODEL_PATH}")
+    raise RuntimeError(f"Model directory not found at {MODEL_PATH}")
 
 model = Model(MODEL_PATH)
 print("✅ Vosk model loaded")
 
-# Хранилище активных сессий: session_id → recognizer
+# Хранилище активных сессий (в реальном проекте — лучше использовать Redis или TTL-кэш)
 sessions = {}
 
 @app.get("/health")
@@ -31,15 +31,17 @@ async def websocket_stt(websocket: WebSocket):
     sessions[session_id] = rec
     
     try:
-        # Отправляем клиенту session_id
+        # Отправляем session_id клиенту (опционально)
         await websocket.send_json({"type": "session", "session_id": session_id})
         
         while True:
             data = await websocket.receive_bytes()
             
             if rec.AcceptWaveform(data):
-                res = rec.Result()
-                await websocket.send_json({"type": "partial", "text": eval(res).get("text", "")})
+                result = rec.Result()
+                text = eval(result).get("text", "")
+                if text:
+                    await websocket.send_json({"type": "partial", "text": text})
             else:
                 partial = rec.PartialResult()
                 partial_text = eval(partial).get("partial", "")
@@ -51,15 +53,17 @@ async def websocket_stt(websocket: WebSocket):
     except Exception as e:
         await websocket.send_json({"type": "error", "message": str(e)})
     finally:
-        # Финальный результат при закрытии
+        # Финальный результат
         final = rec.FinalResult()
         final_text = eval(final).get("text", "")
         if final_text:
             await websocket.send_json({"type": "final", "text": final_text})
         sessions.pop(session_id, None)
         await websocket.close()
-        
-        if __name__ == "__main__":
+
+
+# Запуск сервера (обязательно для Render.com)
+if __name__ == "__main__":
     import uvicorn
     import os
     port = int(os.environ.get("PORT", 10000))
