@@ -58,3 +58,9 @@ async def websocket_stt(websocket: WebSocket):
             await websocket.send_json({"type": "final", "text": final_text})
         sessions.pop(session_id, None)
         await websocket.close()
+        
+        if __name__ == "__main__":
+    import uvicorn
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, workers=1)
