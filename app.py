@@ -49,6 +49,7 @@ async def websocket_stt(websocket: WebSocket):
         # Обязательно вызываем FinalResult — даже если речь была короткой
         final = rec.FinalResult()
         final_text = eval(final).get("text", "")
+            print(">>> FINAL RESULT:", repr(final_text))  # ← ДОБАВЬ ЭТО
         if final_text.strip():
             try:
                 await websocket.send_json({"type": "final", "text": final_text})
