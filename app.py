@@ -7,16 +7,16 @@ import os
 
 app = Flask(__name__)
 
-# === Загрузка Vosk (small модель для русского) ===
+# Загрузка модели Vosk
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
-    raise RuntimeError("Модель Vosk не найдена! Скачайте vosk-model-small-ru-0.22 в папку model/")
+    raise RuntimeError("Vosk model not found in ./model/")
 
 vosk_model = Model(MODEL_PATH)
 SAMPLE_RATE = 16000
 
-def audio_bytes_to_wav_buffer(audio_bytes):
-    """Преобразует байты в WAV-буфер (16kHz, mono)"""
+def bytes_to_wav_buffer(audio_bytes):
+    """Преобразует байты в WAV-буфер (16kHz, mono, 16-bit)"""
     buffer = io.BytesIO()
     with wave.open(buffer, 'wb') as wf:
         wf.setnchannels(1)
@@ -28,30 +28,41 @@ def audio_bytes_to_wav_buffer(audio_bytes):
 
 @app.route('/process', methods=['POST'])
 def process_audio():
+    print("=== [PYTHON DEBUG] НОВЫЙ ЗАПРОС ПОЛУЧЕН ===")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Content-Type: {request.content_type}")
+
     try:
         data = request.get_json()
-        audio_data = data.get("audioData")  # список чисел (байты)
+        print(f"JSON получен: {type(data)}")
 
-        if not audio_data:
+        if not 
+            print("❌ ОШИБКА: запрос пустой")
+            return jsonify({"player_text": "Ошибка: пустой запрос"}), 400
+
+        audio_data = data.get("audioData")
+        print(f"AudioData длина: {len(audio_data) if audio_data else 'None'}")
+
+        if not audio_
+            print("❌ ОШИБКА: нет аудио")
             return jsonify({"player_text": "Ошибка: нет аудио"}), 400
 
-        # Конвертируем список байтов в bytes
+        print(f"📥 Получено {len(audio_data)} байт аудио")
+
+        # Преобразуем в байты и в WAV
         audio_bytes = bytes(audio_data)
+        wav_buffer = bytes_to_wav_buffer(audio_bytes)
 
-        # Преобразуем в WAV
-        wav_buffer = audio_bytes_to_wav_buffer(audio_bytes)
-
-        # STT через Vosk
+        # Распознавание через Vosk
         rec = KaldiRecognizer(vosk_model, SAMPLE_RATE)
-
         text = ""
         while True:
             chunk = wav_buffer.read(4000)
             if not chunk:
                 break
             if rec.AcceptWaveform(chunk):
-                res = json.loads(rec.Result())
-                text += res.get("text", "") + " "
+                result = json.loads(rec.Result())
+                text += result.get("text", "") + " "
 
         text = text.strip()
         if not text:
@@ -61,8 +72,10 @@ def process_audio():
         return jsonify({"player_text": text})
 
     except Exception as e:
-        print("❌ Ошибка:", str(e))
+        print(f"❌ Ошибка обработки: {str(e)}")
         return jsonify({"player_text": "Ошибка распознавания"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+    port = int(os.environ.get('PORT', 10000))
+    print(f"=== [PYTHON DEBUG] Запуск сервера на порту {port} ===")
+    app.run(host='0.0.0.0', port=port, debug=False)
