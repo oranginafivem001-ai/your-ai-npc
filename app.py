@@ -3,21 +3,27 @@ import wave
 import io
 import json
 from vosk import Model, KaldiRecognizer
+from openai import OpenAI
 import os
 
 app = Flask(__name__)
 
-# Загрузка модели Vosk
+# === Загрузка Vosk (small модель для русского) ===
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
-    raise RuntimeError("Vosk model not found in ./model/")
+    raise RuntimeError("Модель Vosk не найдена! Скачайте vosk-model-small-ru-0.22 в папку model/")
 
-# Загрузка модели (русская, small)
 vosk_model = Model(MODEL_PATH)
 SAMPLE_RATE = 16000
 
-def bytes_to_wav_buffer(audio_bytes):
-    """Преобразует байты в WAV-буфер (16kHz, mono, 16-bit)"""
+# === Groq клиент ===
+groq_client = OpenAI(
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1"
+)
+
+def audio_bytes_to_wav_buffer(audio_bytes):
+    """Преобразует байты в WAV-буфер (16kHz, mono)"""
     buffer = io.BytesIO()
     with wave.open(buffer, 'wb') as wf:
         wf.setnchannels(1)
@@ -29,55 +35,63 @@ def bytes_to_wav_buffer(audio_bytes):
 
 @app.route('/process', methods=['POST'])
 def process_audio():
-    print("=== [PYTHON DEBUG] НОВЫЙ ЗАПРОС ПОЛУЧЕН ===")
-    print(f"Headers: {dict(request.headers)}")
-    print(f"Content-Type: {request.content_type}")
-
     try:
-        # Получаем JSON
         data = request.get_json()
-        print(f"JSON получен: {type(data)}")
+        audio_data = data.get("audioData")  # список чисел (байты)
+        npc_role = data.get("npc_role", "NPC")
+        location = data.get("location", "Лос-Сантос")
+        weather = data.get("weather", "ясно")
 
-        if not 
-            print("❌ ОШИБКА: запрос пустой")
-            return jsonify({"player_text": "Ошибка: пустой запрос"}), 400
+        if not audio_data:
+            return jsonify({"error": "No audio data"}), 400
 
-        audio_data = data.get("audioData")
-        print(f"AudioData длина: {len(audio_data) if audio_data else 'None'}")
-
-        if not audio_
-            print("❌ ОШИБКА: нет аудио")
-            return jsonify({"player_text": "Ошибка: нет аудио"}), 400
-
-        print(f"📥 Получено {len(audio_data)} байт аудио")
-
-        # Преобразуем в байты и в WAV
+        # Конвертируем список байтов в bytes
         audio_bytes = bytes(audio_data)
-        wav_buffer = bytes_to_wav_buffer(audio_bytes)
 
-        # Распознавание через Vosk
+        # Преобразуем в WAV
+        wav_buffer = audio_bytes_to_wav_buffer(audio_bytes)
+
+        # STT через Vosk
         rec = KaldiRecognizer(vosk_model, SAMPLE_RATE)
+        rec.SetWords(True)
+
         text = ""
         while True:
-            chunk = wav_buffer.read(4000)
-            if not chunk:
+            data = wav_buffer.read(4000)
+            if len(data) == 0:
                 break
-            if rec.AcceptWaveform(chunk):
-                result = json.loads(rec.Result())
-                text += result.get("text", "") + " "
+            if rec.AcceptWaveform(data):
+                res = json.loads(rec.Result())
+                text += res.get("text", "") + " "
 
         text = text.strip()
         if not text:
-            text = "Не расслышал"
+            return jsonify({"response": "Не расслышал, повтори."})
 
-        print(f"✅ Распознано: '{text}'")
-        return jsonify({"player_text": text})
+        # Формируем промпт для Groq
+        prompt = f"""
+Ты — {npc_role} в Лос-Сантосе.
+Ты находишься на {location}, сейчас {weather}.
+Твоя задача — отвечать коротко, в характере, по-русски.
+Игрок говорит: "{text}"
+Ответ:
+"""
+
+        # Запрос к Groq
+        groq_response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=80,
+            temperature=0.7
+        )
+
+        answer = groq_response.choices[0].message.content.strip()
+
+        return jsonify({"response": answer})
 
     except Exception as e:
-        print(f"❌ Ошибка обработки: {str(e)}")
-        return jsonify({"player_text": "Ошибка распознавания"}), 500
+        print("Ошибка:", str(e))
+        return jsonify({"response": "Чё? Повтори!"}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    print(f"=== [PYTHON DEBUG] Запуск сервера на порту {port} ===")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
