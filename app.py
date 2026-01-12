@@ -1,56 +1,74 @@
-from fastapi import FastAPI, WebSocket
+from flask import Flask, request, jsonify
 import os
-import uuid
+import wave
+import json
 from vosk import Model, KaldiRecognizer
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Загрузка модели Vosk (один раз при старте)
+# Загружаем модель один раз при старте
 MODEL_PATH = "./model"
 if not os.path.exists(MODEL_PATH):
-    raise RuntimeError(f"Model directory not found at {MODEL_PATH}")
+    raise Exception(f"Model path {MODEL_PATH} does not exist")
 
 model = Model(MODEL_PATH)
-print("✅ Vosk model loaded")
+print("✅ Vosk model loaded successfully.")
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "model": "vosk-small-ru-0.22"}
-
-@app.websocket("/ws/stt")
-async def websocket_stt(websocket: WebSocket):
-    await websocket.accept()
-    
-    rec = KaldiRecognizer(model, 16000)
-    rec.SetWords(True)
-    
+@app.route('/stt', methods=['POST'])
+def stt():
     try:
+        # Проверяем, есть ли файл или raw audio data
+        if 'audio' in request.files:
+            audio_file = request.files['audio']
+            audio_path = "/tmp/audio.wav"
+            audio_file.save(audio_path)
+        elif 'audioData' in request.json:
+            # Если приходит массив байтов (как в твоём скрипте)
+            audio_data = bytes(request.json['audioData'])
+            audio_path = "/tmp/audio.wav"
+            with open(audio_path, 'wb') as f:
+                f.write(audio_data)
+        else:
+            return jsonify({"error": "No audio data provided"}), 400
+
+        # Открываем WAV
+        wf = wave.open(audio_path, "rb")
+        if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 16000:
+            return jsonify({"error": "Audio must be 16kHz, mono, 16-bit PCM"}), 400
+
+        # Распознавание
+        rec = KaldiRecognizer(model, wf.getframerate())
+        rec.SetWords(True)
+
+        result = ""
         while True:
-            data = await websocket.receive_bytes()
-            
-            # Основная логика Vosk: обрабатываем чанк
+            data = wf.readframes(4000)
+            if len(data) == 0:
+                break
             if rec.AcceptWaveform(data):
-                # Фраза завершена → полный результат
-                result = rec.Result()
-                text = eval(result).get("text", "")
-                if text.strip():
-                    await websocket.send_json({"type": "partial", "text": text})
-            else:
-                # Фраза ещё идёт → промежуточный результат
-                partial = rec.PartialResult()
-                partial_text = eval(partial).get("partial", "")
-                if partial_text.strip():
-                    await websocket.send_json({"type": "partial", "text": partial_text})
-                    
-    except Exception:
-        # Любое отключение (включая быстрое) — просто выходим
-        pass
-finally:
-    final = rec.FinalResult()
-    final_text = eval(final).get("text", "")
-    print(">>> FINAL RESULT:", repr(final_text))  # ← ПРАВИЛЬНЫЙ ОТСТУП
-    if final_text.strip():
-        try:
-            await websocket.send_json({"type": "final", "text": final_text})
-        except:
-            pass  # игнорируем, если соединение уже закрыто
+                res = json.loads(rec.Result())
+                result += res.get("text", "") + " "
+
+        final_result = rec.FinalResult()
+        final_text = json.loads(final_result).get("text", "").strip()
+
+        # Очищаем временный файл
+        os.remove(audio_path)
+
+        return jsonify({
+            "text": final_text,
+            "success": True
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "success": False
+        }), 500
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok", "model": "vosk-small-ru-0.22"})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
